@@ -90,6 +90,14 @@ class SkinportTracker:
                     logger.warning(f"❌ Skin '{skin_name}' non trouvé")
                     return None
 
+                elif response.status == 429:
+                    retry_after = int(response.headers.get('Retry-After', 300))
+                    logger.warning(f"⚠️  Rate limit 429 - Tu as dépassé le quota API!")
+                    logger.warning(f"⏳ Attente de {retry_after}s avant de réessayer...")
+                    logger.info(f"💡 Astuce: Attends 5 minutes entre chaque test pour éviter le rate limit")
+                    await asyncio.sleep(retry_after)
+                    return None
+
                 else:
                     logger.error(f"❌ Erreur API {response.status}")
                     return None
