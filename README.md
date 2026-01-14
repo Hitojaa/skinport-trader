@@ -1,207 +1,180 @@
-# 🎮 Skinport CS2 Trading Bot
+# 🎯 Skinport Tracker - UN SEUL SKIN
 
-Bot de trading automatisé pour skins Counter-Strike 2 sur Skinport.
+Bot ultra-simple qui surveille **UN SEUL skin CS2** sur Skinport et t'alerte sur Discord quand le prix est intéressant.
 
-## 📋 Description
+## 💡 Concept
 
-Ce bot surveille en continu les prix des skins CS2 sur Skinport et détecte automatiquement :
-- **📉 Prix sous-évalués** : Items 15%+ sous leur médiane 7 jours
-- **📈 Momentum haussier** : Items avec une tendance de prix à la hausse
+Au lieu de scanner des centaines de skins au hasard :
+- ✅ Tu choisis **UN skin volatile** (ex: AK-47 Redline, AWP Asiimov)
+- ✅ Le bot check son prix **toutes les 5 minutes**
+- ✅ Il t'envoie une **alerte Discord** quand le prix est **15%+ sous la médiane 7j**
+- ✅ **Économique** : minimum d'appels API
 
-Il vous envoie des alertes Discord/Telegram lorsqu'une opportunité de trading est détectée.
+## 🚀 Installation rapide
 
-## 🏗️ Architecture
-
-```
-skinport-trader/
-├── src/                    # Code source principal
-│   ├── main.py            # Point d'entrée du bot
-│   ├── config.py          # Configuration (variables d'environnement)
-│   ├── database.py        # Gestion base de données SQLite
-│   ├── skinport_collector.py  # Collecteur API Skinport + analyse
-│   └── alerts.py          # Système d'alertes Discord/Telegram
-├── tests/                 # Tests
-│   └── test_api.py       # Test de l'API Skinport
-├── data/                  # Données générées (gitignored)
-│   ├── skinport_trading.db
-│   └── skinport_bot.log
-├── .env                   # Variables d'environnement (à créer)
-├── requirements.txt       # Dépendances Python
-└── run.py                # Script de lancement
-```
-
-## 🚀 Installation
-
-### 1. Prérequis
-- Python 3.8+
-- Compte Skinport avec API credentials
-
-### 2. Installation
 ```bash
-# Clone le repo
+# 1. Clone le repo
 git clone https://github.com/ton-username/skinport-trader.git
 cd skinport-trader
 
-# Crée un environnement virtuel
-python -m venv venv
-
-# Active l'environnement virtuel
-# Sur Windows:
-venv\Scripts\activate
-# Sur Linux/Mac:
-source venv/bin/activate
-
-# Installe les dépendances
+# 2. Installe les dépendances
 pip install -r requirements.txt
-```
 
-### 3. Configuration
-
-Copie `.env.example` en `.env` et remplis tes credentials :
-
-```bash
+# 3. Configure
 cp .env.example .env
-```
+# Édite .env avec tes credentials
 
-Édite `.env` avec tes propres valeurs :
-```env
-# API Skinport (REQUIS)
-# Obtenir sur: https://skinport.com/settings
-SKINPORT_CLIENT_ID=ton_client_id
-SKINPORT_CLIENT_SECRET=ton_client_secret
-
-# Alertes Discord (RECOMMANDÉ)
-# Créer un webhook: Paramètres serveur > Intégrations > Webhooks
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
-
-# Alertes Telegram (OPTIONNEL)
-TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
-TELEGRAM_CHAT_ID=123456789
-
-# Paramètres de trading (optionnel, valeurs par défaut OK)
-MAX_ITEM_PRICE=100.0
-MIN_VOLUME_24H=5
-MIN_EDGE_NET=3.0
-```
-
-## ▶️ Utilisation
-
-### Lancer le bot en mode 24/7
-```bash
+# 4. Lance !
 python run.py
 ```
 
-### Tester l'API avant de lancer
-```bash
-python tests/test_api.py
+## ⚙️ Configuration (.env)
+
+```env
+# API Skinport (obligatoire)
+SKINPORT_CLIENT_ID=ton_client_id
+SKINPORT_CLIENT_SECRET=ton_secret
+
+# Skin à surveiller (obligatoire)
+SKIN_TO_TRACK=AK-47 | Redline (Field-Tested)
+
+# Discord webhook (obligatoire)
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+
+# Paramètres (optionnel)
+CHECK_INTERVAL_MINUTES=5        # Check toutes les 5 min
+PRICE_DROP_THRESHOLD=15.0       # Alerte si -15% sous médiane
+MIN_EDGE_PERCENT=5.0            # Profit min après frais
+MIN_ALERT_INTERVAL=30           # Max 1 alerte/30min
 ```
 
-Le bot va :
-1. Se connecter à l'API Skinport
-2. Scanner les items disponibles (par défaut : 10 items/scan)
-3. Analyser les statistiques de prix (24h, 7j, 30j)
-4. Détecter les signaux de trading
-5. Envoyer des alertes Discord/Telegram
-6. Répéter toutes les heures
+## 📊 Comment ça marche ?
 
-## 📊 Signaux détectés
+1. **Récupère le prix actuel** du skin
+2. **Compare avec la médiane 7 jours** (prix moyen récent)
+3. **Calcule le profit potentiel** après frais Skinport (12%)
+4. **Alerte si opportunité** :
+   - Prix ≥ 15% sous la médiane
+   - Profit net ≥ 5% après frais
 
-### UNDERPRICED (Sous-évalué)
-- Prix actuel **< 15% sous la médiane 7 jours**
-- Edge net **> 3%** après frais Skinport (12%)
-- Volume **> 5 ventes/24h**
-- **Action** : Acheter maintenant, revendre à prix normal
+### Exemple concret
 
-### MOMENTUM (Tendance haussière)
-- Prix moyen 24h **> Prix moyen 7j**
-- Momentum **> 8%**
-- Volume élevé (> 7-8 ventes/24h)
-- **Action** : Acheter avant la hausse, revendre au pic
+```
+Skin: AK-47 | Redline (Field-Tested)
+Prix actuel: 7.50€
+Médiane 7j: 9.00€
+Baisse: -16.7% ✅
+Profit net: +7.2% après frais ✅
 
-## ⚙️ Configuration avancée
-
-Modifie les variables d'environnement dans `.env` :
-
-| Variable | Description | Défaut |
-|----------|-------------|--------|
-| `MAX_ITEMS_PER_SCAN` | Nombre d'items analysés par scan | 10 |
-| `SCAN_INTERVAL` | Intervalle entre scans (minutes) | 60 |
-| `RATE_LIMIT_DELAY` | Délai entre requêtes API (secondes) | 45 |
-| `MAX_ITEM_PRICE` | Prix max d'un item (€) | 100 |
-| `MIN_VOLUME_24H` | Volume minimum requis | 5 |
-| `MIN_EDGE_NET` | Edge minimum après frais (%) | 3.0 |
-
-## 🛑 Arrêter le bot
-
-```bash
-# Appuie sur Ctrl+C
+→ ALERTE DISCORD envoyée ! 🔔
 ```
 
-## 📝 Logs
+## 🎮 Choix du skin
 
-Les logs sont sauvegardés dans `data/skinport_bot.log`
+Choisis un skin **volatile** avec **bon volume** :
+
+**✅ Bons choix (populaires + volatils) :**
+- AK-47 | Redline (Field-Tested)
+- AWP | Asiimov (Field-Tested)
+- M4A4 | Desolate Space (Field-Tested)
+- Glock-18 | Water Elemental (Field-Tested)
+
+**❌ Mauvais choix :**
+- Skins rares/chers (pas de volume)
+- Skins stables (pas de volatilité)
+- Capsules/stickers (marché différent)
+
+💡 **Astuce** : Va sur Skinport, cherche un skin populaire, regarde son graphique de prix sur 7j. S'il bouge beaucoup = bon candidat !
+
+## 📁 Structure
+
+```
+skinport-trader/
+├── src/
+│   ├── config.py           # Configuration
+│   ├── skinport_tracker.py # Surveillance du skin
+│   ├── alerts.py           # Alertes Discord
+│   └── main.py             # Boucle principale
+├── data/                    # Logs (auto-créé)
+├── .env                     # Ta config (à créer)
+└── run.py                   # Lance le bot
+```
+
+## 🔔 Format de l'alerte Discord
+
+```
+🔔 OPPORTUNITÉ DÉTECTÉE !
+AK-47 | Redline (Field-Tested)
+
+💰 Prix actuel: 7.50€
+📊 Médiane 7j: 9.00€
+📉 Baisse: -16.7%
+💵 Profit net estimé: +7.2%
+📈 Volume 24h: 42 ventes
+⏰ Heure: 14:23:45
+
+Prix 16.7% sous médiane 7j, edge net 7.2%
+```
+
+## 📊 Logs
+
+Les logs sont dans `data/skinport_tracker.log` :
 
 ```bash
 # Voir les logs en temps réel
-tail -f data/skinport_bot.log
+tail -f data/skinport_tracker.log
 ```
 
-## 🔧 Développement
+## ⏹️ Arrêter le bot
 
-### Structure du code
+Appuie sur `Ctrl+C`
 
-- **`config.py`** : Charge les variables d'environnement et valide la config
-- **`database.py`** : ORM SQLAlchemy pour stocker items/prix/signaux
-- **`skinport_collector.py`** :
-  - `SkinportCollector` : Appels API Skinport avec rate limiting
-  - `SignalEngine` : Détection des signaux de trading
-- **`alerts.py`** : Envoi d'alertes Discord/Telegram avec anti-spam
-- **`main.py`** : Boucle principale du bot 24/7
+## 🔧 API Rate Limits
 
-### Ajouter un nouveau signal
+Skinport autorise **8 requêtes / 5 minutes**.
+Le bot respecte automatiquement ce limit (45s entre requêtes).
 
-Édite `src/skinport_collector.py` > `SignalEngine.detect_signals()` :
-
-```python
-# Signal personnalisé
-if ma_condition:
-    return TradingSignal(
-        timestamp=now,
-        item_name=item_data["market_hash_name"],
-        signal_type=SignalType.MON_SIGNAL,
-        ...
-    )
-```
-
-## 📚 API Skinport
-
-Documentation officielle : https://docs.skinport.com
-
-Endpoints utilisés :
-- `/v1/items` : Liste des items disponibles
-- `/v1/sales/history` : Statistiques de prix agrégées
-
-Rate limits : **8 requêtes / 5 minutes** (respectés automatiquement)
+**Avec check toutes les 5 min** :
+- 2 requêtes par check (prix + historique)
+- 90 secondes d'attente minimum
+- **Largement dans les limites** ✅
 
 ## ⚠️ Avertissements
 
-- **Trading à risque** : Ce bot ne garantit pas de profit
-- **Frais Skinport** : 12% de frais sur les ventes
-- **Rate limits** : Respecte les limites API ou risque de ban
-- **Capital requis** : Minimum 50-100€ recommandé
-- **Pas de conseil financier** : À utiliser à tes risques et périls
+- 🎲 **Trading = risque** : pas de garantie de profit
+- 💰 **Frais Skinport** : 12% sur les ventes
+- ⏱️ **Rate limits** : ne modifie pas l'intervalle sans raison
+- 💵 **Capital requis** : minimum 50€ recommandé
+
+## 🆘 Problèmes fréquents
+
+### ❌ "Skin not found"
+→ Vérifie l'orthographe exacte sur Skinport (copie-colle le nom)
+
+### ❌ "API Error 401"
+→ Vérifie tes credentials Skinport
+
+### ❌ "Discord Error 404"
+→ Vérifie ton webhook Discord (doit être valide)
+
+### ❌ Pas d'alertes
+→ Normal ! La plupart du temps, le prix est stable. Sois patient.
+
+## 📈 Optimisations
+
+### Skin trop stable ?
+→ Change de skin, choisis-en un plus volatile
+
+### Trop/pas assez d'alertes ?
+→ Ajuste `PRICE_DROP_THRESHOLD` dans .env (10-20%)
+
+### Check plus fréquent ?
+→ Baisse `CHECK_INTERVAL_MINUTES` (attention aux rate limits)
 
 ## 📄 Licence
 
-MIT License - Utilise à tes risques
+MIT - Utilise à tes risques et périls
 
-## 🤝 Contribution
+## 🙏 Crédits
 
-Les pull requests sont bienvenues ! Pour des changements majeurs, ouvre d'abord une issue.
-
-## 📧 Support
-
-En cas de problème :
-1. Vérifie les logs dans `data/skinport_bot.log`
-2. Teste l'API avec `python tests/test_api.py`
-3. Ouvre une issue sur GitHub
+API: [Skinport](https://skinport.com) | Bot: fait maison 🚀
