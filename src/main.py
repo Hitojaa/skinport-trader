@@ -18,14 +18,15 @@ from config import Config
 from skinport_tracker import SkinportTracker
 from alerts import DiscordAlert
 
-# Configuration du logging
+# Configuration du logging - SANS EMOJIS pour Windows
 os.makedirs('data', exist_ok=True)
 
+# Formateur personnalisé sans emojis
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('data/skinport_tracker.log'),
+        logging.FileHandler('data/skinport_tracker.log', encoding='utf-8'),
         logging.StreamHandler(sys.stdout)
     ]
 )
@@ -55,7 +56,7 @@ class TrackerBot:
 
         # Validation
         if not self.config.validate():
-            logger.error("❌ Configuration invalide")
+            logger.error("[ERREUR] Configuration invalide")
             return
 
         skin_name = self.config.tracker.skin_name
@@ -104,7 +105,7 @@ class TrackerBot:
 
                     except Exception as e:
                         logger.error(f"❌ Erreur: {e}", exc_info=True)
-                        logger.info("⏭️  Le bot continue malgré l'erreur...")
+                        logger.info("[CONTINUE]  Le bot continue malgré l'erreur...")
                         await asyncio.sleep(60)
 
     def stop(self):
@@ -120,9 +121,9 @@ async def main():
     try:
         from dotenv import load_dotenv
         load_dotenv()
-        logger.info("✅ Variables d'environnement chargées")
+        logger.info("[OK] Variables d'environnement chargées")
     except ImportError:
-        logger.warning("⚠️  python-dotenv non installé")
+        logger.warning("[WARN]  python-dotenv non installé")
 
     config = Config()
 
@@ -135,7 +136,7 @@ async def main():
         logger.info("\n⏹️  Interruption par l'utilisateur")
     finally:
         bot.stop()
-        logger.info("✅ Bot arrêté proprement\n")
+        logger.info("[OK] Bot arrêté proprement\n")
 
 
 if __name__ == "__main__":

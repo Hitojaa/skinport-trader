@@ -94,7 +94,7 @@ class DiscordAlert:
 
             async with self.session.post(self.webhook_url, json=payload) as response:
                 if response.status == 204:
-                    logger.info("✅ Alerte Discord envoyée !")
+                    logger.info("[OK] Alerte Discord envoyée !")
                     self.last_alert_time = datetime.now()
                     return True
                 else:
