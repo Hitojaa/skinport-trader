@@ -1,0 +1,13 @@
+# Secrets
+.env
+
+# Environnements virtuels
+venv/
+__pycache__/
+
+# Fichiers locaux / DB
+*.db
+*.log
+
+# Python
+*.pyc
