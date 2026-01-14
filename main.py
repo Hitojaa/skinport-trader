@@ -173,34 +173,31 @@ class TradingBot:
                                 timestamp=datetime.utcnow()
                             )
                         
-                        # Récupère historique
+                        # Récupère historique (statistiques agrégées)
                         history = await collector.get_sales_history(item_name, days=7)
 
                         if not history:
                             logger.debug(f"  ⚠️  Pas d'historique disponible pour {item_name}")
                             continue
 
-                        logger.debug(f"  📊 {len(history)} ventes dans l'historique")
-                        
-                        # Sauvegarde historique en DB
-                        saved_count = 0
-                        for sale in history[-20:]:  # Dernières 20 ventes
-                            # Gestion robuste des clés qui peuvent manquer
-                            sale_price = sale.get('price') or sale.get('sale_price')
-                            sold_at = sale.get('sold_at')
+                        # Log des stats disponibles
+                        stats_24h = history.get("last_24_hours", {})
+                        logger.debug(f"  📊 Stats 24h: vol={stats_24h.get('volume', 0)}, "
+                                   f"avg={stats_24h.get('avg', 0):.2f}€, "
+                                   f"median={stats_24h.get('median', 0):.2f}€")
 
-                            if sale_price and sold_at:
-                                self.db.add_price_tick(
-                                    session,
-                                    item_id=item.id,
-                                    price=sale_price,
-                                    volume=1,
-                                    timestamp=datetime.fromtimestamp(sold_at)
-                                )
-                                saved_count += 1
+                        # Sauvegarde les stats agrégées en DB (optionnel)
+                        # On sauvegarde juste le prix actuel et les stats principales
+                        if stats_24h:
+                            self.db.add_price_tick(
+                                session,
+                                item_id=item.id,
+                                price=stats_24h.get('median', current_price),
+                                volume=stats_24h.get('volume', 0),
+                                timestamp=datetime.utcnow()
+                            )
+                            logger.debug(f"  💾 Stats sauvegardées en DB")
 
-                        logger.debug(f"  💾 {saved_count} ventes sauvegardées en DB")
-                        
                         # Détecte signaux
                         signal = signal_engine.detect_signals(item_data, history)
                         
