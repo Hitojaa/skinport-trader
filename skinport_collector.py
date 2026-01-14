@@ -118,8 +118,15 @@ class SkinportCollector:
             logger.debug(traceback.format_exc())
             return []
     
-    async def get_sales_history(self, market_hash_name: str, days: int = 7) -> List[Dict]:
-        """Récupère l'historique des ventes (rate limit: 8 req / 5min)"""
+    async def get_sales_history(self, market_hash_name: str, days: int = 7) -> Optional[Dict]:
+        """Récupère l'historique des ventes (statistiques agrégées)
+
+        Retourne un dict avec:
+        - last_24_hours: {min, max, avg, median, volume}
+        - last_7_days: {min, max, avg, median, volume}
+        - last_30_days: {min, max, avg, median, volume}
+        - last_90_days: {min, max, avg, median, volume}
+        """
         endpoint = "/sales/history"
         await self._rate_limit_wait(endpoint)
 
@@ -133,20 +140,28 @@ class SkinportCollector:
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data
+
+                    # L'API retourne une liste avec un seul élément
+                    if isinstance(data, list) and len(data) > 0:
+                        return data[0]  # Premier élément contient les stats
+                    elif isinstance(data, dict):
+                        return data
+                    else:
+                        logger.warning(f"Format de réponse inattendu pour {market_hash_name}: {type(data)}")
+                        return None
+
                 elif response.status == 429:
                     # Rate limit - attendre plus longtemps
                     retry_after = int(response.headers.get('Retry-After', 120))
                     logger.warning(f"⚠️  Rate limit 429 pour {market_hash_name} - Attente {retry_after}s")
                     await asyncio.sleep(retry_after)
-                    # Ne pas retry ici, on retourne vide et on passera au prochain scan
-                    return []
+                    return None
                 else:
                     logger.warning(f"Erreur {response.status} pour {market_hash_name}")
-                    return []
+                    return None
         except Exception as e:
-            logger.error(f"Erreur: {e}")
-            return []
+            logger.error(f"Erreur get_sales_history: {e}")
+            return None
 
 
 class SignalEngine:
@@ -162,44 +177,7 @@ class SignalEngine:
         self.min_edge = min_edge
         self.max_spread = max_spread
     
-    def calculate_z_score(self, current_price: float, prices: List[float]) -> float:
-        """Calcule le z-score (écart par rapport à la moyenne)"""
-        if len(prices) < 2:
-            return 0.0
-        
-        mean = np.mean(prices)
-        std = np.std(prices)
-        
-        if std == 0:
-            return 0.0
-        
-        return (current_price - mean) / std
-    
-    def calculate_momentum(self, prices: List[float], timestamps: List[datetime]) -> Dict:
-        """Calcule le momentum sur différentes périodes"""
-        if len(prices) < 2:
-            return {"1h": 0, "6h": 0, "24h": 0}
-        
-        df = pd.DataFrame({"price": prices, "time": timestamps})
-        df = df.sort_values("time")
-        
-        now = timestamps[-1]
-        price_now = prices[-1]
-        
-        momentum = {}
-        for hours, label in [(1, "1h"), (6, "6h"), (24, "24h")]:
-            cutoff = now - timedelta(hours=hours)
-            old_prices = df[df["time"] <= cutoff]["price"]
-            
-            if len(old_prices) > 0:
-                old_price = old_prices.iloc[-1]
-                momentum[label] = ((price_now - old_price) / old_price) * 100
-            else:
-                momentum[label] = 0
-        
-        return momentum
-    
-    def calculate_edge(self, buy_price: float, sell_price: float, 
+    def calculate_edge(self, buy_price: float, sell_price: float,
                       skinport_fee: float = 0.12, slippage: float = 0.01) -> float:
         """Calcule l'edge net après frais"""
         gross_profit = sell_price - buy_price
@@ -209,25 +187,36 @@ class SignalEngine:
         net_profit = gross_profit - fees - slippage_cost
         return (net_profit / buy_price) * 100
     
-    def detect_signals(self, item_data: Dict, history: List[Dict]) -> Optional[TradingSignal]:
-        """Détecte les signaux de trading"""
-        
-        if len(history) < 10:
+    def detect_signals(self, item_data: Dict, history: Dict) -> Optional[TradingSignal]:
+        """Détecte les signaux de trading à partir des statistiques agrégées
+
+        Args:
+            item_data: Données de l'item depuis /items (avec min_price, etc.)
+            history: Statistiques depuis /sales/history (last_24_hours, last_7_days, etc.)
+        """
+        if not history:
             return None
-        
-        # Prépare les données
-        prices = [sale["price"] for sale in history]
-        timestamps = [datetime.fromtimestamp(sale["sold_at"]) for sale in history]
-        current_price = item_data.get("min_price", prices[-1])
-        
-        # Volume 24h
+
         now = datetime.now()
-        volume_24h = len([s for s in history if datetime.fromtimestamp(s["sold_at"]) > now - timedelta(hours=24)])
-        
+
+        # Prix actuel de l'item
+        current_price = item_data.get("min_price")
+        if not current_price:
+            return None
+
+        # Statistiques historiques
+        stats_7d = history.get("last_7_days", {})
+        stats_24h = history.get("last_24_hours", {})
+        stats_30d = history.get("last_30_days", {})
+
+        # Volume 24h
+        volume_24h = stats_24h.get("volume", 0)
+
+        # Filtre volume insuffisant
         if volume_24h < self.min_volume_24h:
             return TradingSignal(
                 timestamp=now,
-                item_name=item_data["market_hash_name"],
+                item_name=item_data.get("market_hash_name", "Unknown"),
                 signal_type=SignalType.TRAP,
                 z_score=0,
                 volume_24h=volume_24h,
@@ -236,55 +225,66 @@ class SignalEngine:
                 reason=f"Volume insuffisant ({volume_24h} ventes/24h)",
                 confidence=0.0
             )
-        
-        # Calculs
-        z_score = self.calculate_z_score(current_price, prices)
-        momentum = self.calculate_momentum(prices, timestamps)
-        
-        # Estimation spread (simplifié)
-        spread = 0.05  # À affiner avec bid/ask réels si disponibles
-        
-        # Edge potentiel (prix cible = moyenne mobile)
-        target_price = np.mean(prices)
-        edge = self.calculate_edge(current_price, target_price)
-        
-        # Détection signaux
-        
+
+        # Prix de référence (médiane 7 jours)
+        median_7d = stats_7d.get("median")
+        avg_7d = stats_7d.get("avg")
+        avg_24h = stats_24h.get("avg")
+
+        if not median_7d or not avg_7d:
+            return None  # Pas assez de données historiques
+
+        # Calcul du z-score simplifié
+        # On compare le prix actuel à la médiane 7j
+        price_diff_pct = ((current_price - median_7d) / median_7d) * 100
+        z_score = price_diff_pct / 10  # Approximation: 10% = 1 écart-type
+
+        # Estimation spread
+        spread = 0.05
+
+        # Edge potentiel (revendre à la médiane 7j)
+        edge = self.calculate_edge(current_price, median_7d)
+
         # Signal UNDERPRICED
-        if (z_score < self.z_threshold and 
-            volume_24h >= self.min_volume_24h and 
-            edge > self.min_edge and 
-            spread < self.max_spread):
-            
+        # Prix actuel < médiane 7j ET edge intéressant
+        if (price_diff_pct < -15 and  # 15% sous la médiane
+            edge > self.min_edge and
+            volume_24h >= self.min_volume_24h):
+
+            confidence = min(abs(price_diff_pct), 95)
+
             return TradingSignal(
                 timestamp=now,
-                item_name=item_data["market_hash_name"],
+                item_name=item_data.get("market_hash_name", "Unknown"),
                 signal_type=SignalType.UNDERPRICED,
                 z_score=z_score,
                 volume_24h=volume_24h,
                 edge_net=edge,
                 spread=spread,
-                reason=f"Prix {abs(z_score):.1f} écarts-types sous moyenne, edge net {edge:.1f}%",
-                confidence=min(abs(z_score) / 3 * 100, 95)
+                reason=f"Prix {abs(price_diff_pct):.1f}% sous médiane 7j, edge {edge:.1f}%",
+                confidence=confidence
             )
-        
+
         # Signal MOMENTUM
-        if (momentum["24h"] > 10 and 
-            momentum["6h"] > momentum["24h"] * 0.5 and
-            volume_24h >= self.min_volume_24h * 1.5):
-            
-            return TradingSignal(
-                timestamp=now,
-                item_name=item_data["market_hash_name"],
-                signal_type=SignalType.MOMENTUM,
-                z_score=z_score,
-                volume_24h=volume_24h,
-                edge_net=edge,
-                spread=spread,
-                reason=f"Momentum +{momentum['24h']:.1f}% sur 24h, volume élevé",
-                confidence=75
-            )
-        
+        # Prix moyen 24h > prix moyen 7j (tendance haussière)
+        if avg_24h and avg_7d and avg_24h > avg_7d:
+            momentum_pct = ((avg_24h - avg_7d) / avg_7d) * 100
+
+            if (momentum_pct > 8 and  # Au moins 8% de momentum
+                volume_24h >= self.min_volume_24h * 1.5):
+
+                return TradingSignal(
+                    timestamp=now,
+                    item_name=item_data.get("market_hash_name", "Unknown"),
+                    signal_type=SignalType.MOMENTUM,
+                    z_score=z_score,
+                    volume_24h=volume_24h,
+                    edge_net=0,  # Pas de edge pour momentum
+                    spread=spread,
+                    reason=f"Momentum +{momentum_pct:.1f}% (24h vs 7j), volume élevé",
+                    confidence=min(momentum_pct * 5, 90)
+                )
+
         return None
 
 

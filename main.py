@@ -146,7 +146,11 @@ class TradingBot:
                 
                 for idx, item_data in enumerate(filtered_items, 1):
                     try:
-                        item_name = item_data['market_hash_name']
+                        item_name = item_data.get('market_hash_name')
+                        if not item_name:
+                            logger.warning(f"[{idx}/{len(filtered_items)}] Item sans nom - ignoré")
+                            continue
+
                         logger.info(f"[{idx}/{len(filtered_items)}] Analyse: {item_name}")
                         
                         # Ajoute/màj l'item en DB
@@ -169,23 +173,31 @@ class TradingBot:
                                 timestamp=datetime.utcnow()
                             )
                         
-                        # Récupère historique
+                        # Récupère historique (statistiques agrégées)
                         history = await collector.get_sales_history(item_name, days=7)
-                        
+
                         if not history:
-                            logger.debug(f"  Pas d'historique pour {item_name}")
+                            logger.debug(f"  ⚠️  Pas d'historique disponible pour {item_name}")
                             continue
-                        
-                        # Sauvegarde historique en DB
-                        for sale in history[-20:]:  # Dernières 20 ventes
+
+                        # Log des stats disponibles
+                        stats_24h = history.get("last_24_hours", {})
+                        logger.debug(f"  📊 Stats 24h: vol={stats_24h.get('volume', 0)}, "
+                                   f"avg={stats_24h.get('avg', 0):.2f}€, "
+                                   f"median={stats_24h.get('median', 0):.2f}€")
+
+                        # Sauvegarde les stats agrégées en DB (optionnel)
+                        # On sauvegarde juste le prix actuel et les stats principales
+                        if stats_24h:
                             self.db.add_price_tick(
                                 session,
                                 item_id=item.id,
-                                price=sale['price'],
-                                volume=1,
-                                timestamp=datetime.fromtimestamp(sale['sold_at'])
+                                price=stats_24h.get('median', current_price),
+                                volume=stats_24h.get('volume', 0),
+                                timestamp=datetime.utcnow()
                             )
-                        
+                            logger.debug(f"  💾 Stats sauvegardées en DB")
+
                         # Détecte signaux
                         signal = signal_engine.detect_signals(item_data, history)
                         
@@ -219,7 +231,9 @@ class TradingBot:
                         await asyncio.sleep(2)
                     
                     except Exception as e:
-                        logger.error(f"Erreur analyse {item_data.get('market_hash_name')}: {e}")
+                        logger.error(f"Erreur analyse {item_data.get('market_hash_name', 'unknown')}: {e}")
+                        logger.debug(f"Détails de l'erreur:", exc_info=True)
+                        # Continue avec l'item suivant
                         continue
                 
                 # 4. Envoie les alertes
@@ -308,14 +322,10 @@ class TradingBot:
                 
                 # Attente avant prochain cycle
                 await asyncio.sleep(60)  # Vérifie toutes les minutes
-            
-            except KeyboardInterrupt:
-                logger.info("\n⏹️  Arrêt demandé par l'utilisateur")
-                self.running = False
-                break
-            
+
             except Exception as e:
                 logger.error(f"❌ Erreur dans la boucle principale: {e}", exc_info=True)
+                logger.info("⏭️  Le bot va continuer malgré l'erreur...")
                 await asyncio.sleep(60)
     
     async def stop(self):
