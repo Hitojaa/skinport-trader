@@ -1,0 +1,19 @@
+# API & HTTP
+aiohttp==3.9.1
+requests==2.31.0
+brotli==1.2.0  # Required for Skinport API Brotli compression
+brotlipy==0.7.0  # Required for aiohttp to decode brotli automatically
+
+# Base de données
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9  # Pour PostgreSQL (optionnel si tu restes en SQLite)
+
+# Data processing
+pandas==2.1.4
+numpy==1.26.2
+
+# Configuration
+python-dotenv==1.0.0
+
+# Logging & Utils
+python-dateutil==2.8.2
