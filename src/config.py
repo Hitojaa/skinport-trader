@@ -24,12 +24,12 @@ class SkinportConfig:
 @dataclass
 class DatabaseConfig:
     """Configuration base de données"""
-    # Pour dev local : SQLite
-    connection_string: str = "sqlite:///skinport_trading.db"
-    
+    # Pour dev local : SQLite (dans le dossier data/)
+    connection_string: str = "sqlite:///data/skinport_trading.db"
+
     # Pour prod : PostgreSQL
     # connection_string: str = "postgresql://user:password@localhost:5432/skinport_trading"
-    
+
     echo_sql: bool = False  # Affiche les requêtes SQL (debug)
 
 @dataclass

@@ -26,11 +26,14 @@ from skinport_collector import SkinportCollector, SignalEngine
 from alerts import AlertManager
 
 # Configuration du logging
+# Crée le dossier data s'il n'existe pas
+os.makedirs('data', exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('skinport_bot.log'),
+        logging.FileHandler('data/skinport_bot.log'),
         logging.StreamHandler(sys.stdout)
     ]
 )

@@ -4,6 +4,11 @@ Test rapide de l'API Skinport avec la vraie structure des données
 
 import asyncio
 import os
+import sys
+
+# Ajoute le dossier src au path Python
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
 from dotenv import load_dotenv
 from skinport_collector import SkinportCollector, SignalEngine
 
