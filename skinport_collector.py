@@ -133,7 +133,15 @@ class SkinportCollector:
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data
+                    # S'assurer que data est une liste
+                    if isinstance(data, list):
+                        return data
+                    elif isinstance(data, dict):
+                        # Certaines APIs retournent {sales: [...]}
+                        return data.get('sales', []) or data.get('data', [])
+                    else:
+                        logger.warning(f"Format de réponse inattendu pour {market_hash_name}: {type(data)}")
+                        return []
                 elif response.status == 429:
                     # Rate limit - attendre plus longtemps
                     retry_after = int(response.headers.get('Retry-After', 120))
@@ -211,23 +219,49 @@ class SignalEngine:
     
     def detect_signals(self, item_data: Dict, history: List[Dict]) -> Optional[TradingSignal]:
         """Détecte les signaux de trading"""
-        
+
         if len(history) < 10:
             return None
-        
-        # Prépare les données
-        prices = [sale["price"] for sale in history]
-        timestamps = [datetime.fromtimestamp(sale["sold_at"]) for sale in history]
-        current_price = item_data.get("min_price", prices[-1])
+
+        # Log de debug pour voir la structure des données (premier élément seulement)
+        if history and len(history) > 0:
+            logger.debug(f"Structure d'historique (échantillon): {list(history[0].keys())}")
+
+        # Prépare les données avec gestion robuste des clés manquantes
+        prices = []
+        timestamps = []
+
+        for sale in history:
+            # Cherche les différentes variantes de clés possibles
+            price = sale.get('price') or sale.get('sale_price')
+            sold_at = sale.get('sold_at')
+
+            if price and sold_at:
+                prices.append(price)
+                timestamps.append(datetime.fromtimestamp(sold_at))
+            else:
+                logger.debug(f"Vente ignorée - clés manquantes: {sale.keys()}")
+
+        # Si pas assez de données valides
+        if len(prices) < 10:
+            return None
+
+        current_price = item_data.get("min_price", prices[-1] if prices else None)
+
+        if not current_price:
+            return None
         
         # Volume 24h
         now = datetime.now()
-        volume_24h = len([s for s in history if datetime.fromtimestamp(s["sold_at"]) > now - timedelta(hours=24)])
+        volume_24h = len([
+            s for s in history
+            if s.get('sold_at') and datetime.fromtimestamp(s.get('sold_at')) > now - timedelta(hours=24)
+        ])
         
         if volume_24h < self.min_volume_24h:
             return TradingSignal(
                 timestamp=now,
-                item_name=item_data["market_hash_name"],
+                item_name=item_data.get("market_hash_name", "Unknown"),
                 signal_type=SignalType.TRAP,
                 z_score=0,
                 volume_24h=volume_24h,
@@ -251,14 +285,14 @@ class SignalEngine:
         # Détection signaux
         
         # Signal UNDERPRICED
-        if (z_score < self.z_threshold and 
-            volume_24h >= self.min_volume_24h and 
-            edge > self.min_edge and 
+        if (z_score < self.z_threshold and
+            volume_24h >= self.min_volume_24h and
+            edge > self.min_edge and
             spread < self.max_spread):
-            
+
             return TradingSignal(
                 timestamp=now,
-                item_name=item_data["market_hash_name"],
+                item_name=item_data.get("market_hash_name", "Unknown"),
                 signal_type=SignalType.UNDERPRICED,
                 z_score=z_score,
                 volume_24h=volume_24h,
@@ -267,15 +301,15 @@ class SignalEngine:
                 reason=f"Prix {abs(z_score):.1f} écarts-types sous moyenne, edge net {edge:.1f}%",
                 confidence=min(abs(z_score) / 3 * 100, 95)
             )
-        
+
         # Signal MOMENTUM
-        if (momentum["24h"] > 10 and 
+        if (momentum["24h"] > 10 and
             momentum["6h"] > momentum["24h"] * 0.5 and
             volume_24h >= self.min_volume_24h * 1.5):
-            
+
             return TradingSignal(
                 timestamp=now,
-                item_name=item_data["market_hash_name"],
+                item_name=item_data.get("market_hash_name", "Unknown"),
                 signal_type=SignalType.MOMENTUM,
                 z_score=z_score,
                 volume_24h=volume_24h,
